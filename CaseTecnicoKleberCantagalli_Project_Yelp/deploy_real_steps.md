@@ -1,6 +1,6 @@
 # Passo a Passo: Deploy Real do Pipeline Yelp na GCP
 
-## ✅ Pré-requisitos
+## Pré-requisitos
 - Projeto GCP criado com billing ativado
 - Google Cloud SDK instalado
 - Autenticação feita com `gcloud auth login`
@@ -8,7 +8,7 @@
 
 ---
 
-## 🔹 1. Ativar APIs
+##  1. Ativar APIs
 ```bash
 gcloud services enable storage.googleapis.com \
   cloudfunctions.googleapis.com \
@@ -17,7 +17,7 @@ gcloud services enable storage.googleapis.com \
 
 ---
 
-## 🔹 2. Criar Bucket e Dataset
+##  2. Criar Bucket e Dataset
 ```bash
 BUCKET_NAME=medallion-pipeline-yelp
 gsutil mb -l us-central1 gs://$BUCKET_NAME
@@ -27,7 +27,7 @@ bq mk --dataset --location=US yelp_data
 
 ---
 
-## 🔹 3. Conceder Permissões
+##  3. Conceder Permissões
 ```bash
 PROJECT_ID=$(gcloud config get-value project)
 
@@ -42,7 +42,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 
 ---
 
-## 🔹 4. Deploy das Cloud Functions
+##  4. Deploy das Cloud Functions
 
 ### Silver - Transformação
 ```bash
@@ -70,7 +70,7 @@ gcloud functions deploy gold_aggregate \
 
 ---
 
-## 🔹 5. Rodar Ingestão (Bronze)
+##  5. Rodar Ingestão (Bronze)
 - Edite `bronze_ingest/ingest_yelp.py` com sua API Key do Yelp.
 - Execute localmente:
 ```bash
@@ -79,7 +79,7 @@ python3 bronze_ingest/ingest_yelp.py
 
 ---
 
-## 🔹 6. Verificar Resultado
+##  6. Verificar Resultado
 ```bash
 gsutil ls gs://$BUCKET_NAME/bronze/
 gsutil ls gs://$BUCKET_NAME/silver/
