@@ -1,4 +1,4 @@
-# Yelp Medallion Pipeline - GCP - DEV: KLEEBR cANTAGALLI
+# Yelp Medallion Pipeline - GCP - DEV: KLEEBR CANTAGALLI
 
 Este projeto implementa um pipeline de dados usando arquitetura Medallion na Google Cloud Platform (GCP), utilizando dados da API Yelp Fusion, 
 A Yelp Fusion API oferece dados ricos e em tempo real sobre restaurantes, incluindo nome, localização, avaliações, tipo de cozinha, 
