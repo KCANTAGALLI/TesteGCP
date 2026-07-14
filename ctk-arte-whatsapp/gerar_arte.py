@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Arte final CTK Seguros — 1080x1350 PNG @ 300 DPI
-QR Code REAL (biblioteca qrcode) → Segfy
-Botão WhatsApp visual com número (link wa.me no HTML auxiliar)
+Arte final CTK — layout da referência (navy + painel branco + footer)
+1080x1350 PNG @ 300 DPI | QR REAL (qrcode) | WhatsApp + telefone
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import qrcode
-from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, PngImagePlugin
 
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "assets"
@@ -19,370 +18,502 @@ OUTPUT = ROOT / "output"
 
 W, H = 1080, 1350
 DPI = 300
-MARGIN = 32  # borda igual
 
-NAVY = (8, 28, 58)
-NAVY_DEEP = (3, 16, 38)
-NAVY_MID = (16, 48, 92)
+NAVY = (10, 28, 64)
+NAVY_DEEP = (6, 18, 48)
+NAVY_SOFT = (20, 45, 95)
 GOLD = (201, 162, 39)
-GOLD_LIGHT = (232, 201, 98)
-GOLD_DARK = (148, 112, 18)
+GOLD_LIGHT = (230, 200, 95)
+GOLD_DARK = (150, 115, 20)
 WHITE = (255, 255, 255)
 GREEN = (37, 211, 102)
 GREEN_DARK = (18, 140, 70)
+GREEN_TEXT = (22, 163, 74)
+BLACK = (20, 20, 20)
+GRAY = (70, 80, 100)
 
 QR_URL = (
     "https://gestao.segfy.com/Publico/Segurados/Orcamentos/"
     "SolicitarCotacao?e=bq3pqK5O9i3fuSp4u7Wy9w%3D%3D"
 )
 WA_URL = "https://wa.me/5511941947162"
-WA_LABEL = "+55 11 94194-7162"
+WA_PHONE = "+55 11 94194-7162"
 
-FONT_REG = "/usr/share/fonts/truetype/noto/NotoSansDisplay-Regular.ttf"
-FONT_BOLD = "/usr/share/fonts/truetype/noto/NotoSansDisplay-Bold.ttf"
-
-
-def F(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(FONT_BOLD if bold else FONT_REG, size)
+FONT_R = "/usr/share/fonts/truetype/noto/NotoSansDisplay-Regular.ttf"
+FONT_B = "/usr/share/fonts/truetype/noto/NotoSansDisplay-Bold.ttf"
+FONT_BI = "/usr/share/fonts/truetype/noto/NotoSansDisplay-BoldItalic.ttf"
 
 
-def text_size(draw, text, font):
+def F(size: int, bold=False, italic=False):
+    if italic and bold:
+        path = FONT_BI
+    elif bold:
+        path = FONT_B
+    else:
+        path = FONT_R
+    try:
+        return ImageFont.truetype(path, size)
+    except OSError:
+        return ImageFont.truetype(FONT_B if bold else FONT_R, size)
+
+
+def ts(draw, text, font):
     b = draw.textbbox((0, 0), text, font=font)
     return b[2] - b[0], b[3] - b[1]
 
 
-def center_text(draw, text, y, font, fill):
-    tw, th = text_size(draw, text, font)
-    draw.text(((W - tw) // 2, y), text, font=font, fill=fill)
-    return th
-
-
-def rounded(draw, box, r, fill=None, outline=None, width=1):
+def round_rect(draw, box, r, fill=None, outline=None, width=1):
     draw.rounded_rectangle(box, radius=r, fill=fill, outline=outline, width=width)
 
 
-def make_bg() -> Image.Image:
-    img = Image.new("RGB", (W, H), NAVY_DEEP)
-    px = img.load()
-    for y in range(H):
-        t = y / (H - 1)
-        # leve gradiente + vinheta horizontal
-        r = int(NAVY_DEEP[0] * (1 - t * 0.15) + NAVY_MID[0] * t * 0.25)
-        g = int(NAVY_DEEP[1] * (1 - t * 0.15) + NAVY_MID[1] * t * 0.25)
-        b = int(NAVY_DEEP[2] * (1 - t * 0.15) + NAVY_MID[2] * t * 0.25)
-        for x in range(W):
-            edge = min(x, W - 1 - x, y, H - 1 - y)
-            dark = max(0, 28 - edge) / 28.0 * 0.35
-            px[x, y] = (
-                max(0, int(r * (1 - dark))),
-                max(0, int(g * (1 - dark))),
-                max(0, int(b * (1 - dark))),
-            )
-    return img
-
-
-def draw_borders(draw):
-    m = MARGIN
-    draw.rectangle([m, m, W - m - 1, H - m - 1], outline=GOLD, width=3)
-    draw.rectangle([m + 10, m + 10, W - m - 11, H - m - 11], outline=GOLD_LIGHT, width=1)
-    c = m + 20
-    arm = 26
-    for x0, y0, sx, sy in (
-        (c, c, 1, 1),
-        (W - c - 1, c, -1, 1),
-        (c, H - c - 1, 1, -1),
-        (W - c - 1, H - c - 1, -1, -1),
-    ):
-        draw.line([(x0, y0), (x0 + sx * arm, y0)], fill=GOLD, width=3)
-        draw.line([(x0, y0), (x0, y0 + sy * arm)], fill=GOLD, width=3)
-
-
-def load_logo(max_w: int = 300) -> Image.Image:
-    """Fundo branco → transparente; navy → branco; gold permanece."""
-    logo = Image.open(ASSETS / "ctk-logo.png").convert("RGBA")
-    arr = np.array(logo).astype(np.int16)
+def remove_white(img: Image.Image, thresh=240) -> Image.Image:
+    arr = np.array(img.convert("RGBA"))
     r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
-    # branco / near-white → transparente
-    white = (r > 230) & (g > 230) & (b > 230)
-    # gold: R alto, G médio, B baixo
-    gold = (~white) & (r > 140) & (g > 90) & (r - b > 40)
-    # resto com tinta (navy escuro) → branco brilhante
-    ink = (~white) & (~gold) & ((r + g + b) < 520)
+    white = (r > thresh) & (g > thresh) & (b > thresh)
+    arr[white, 3] = 0
+    out = Image.fromarray(arr, "RGBA")
+    bbox = out.getbbox()
+    return out.crop(bbox) if bbox else out
 
-    out = arr.copy()
-    out[white, 3] = 0
-    out[gold, 0] = GOLD[0]
-    out[gold, 1] = GOLD[1]
-    out[gold, 2] = GOLD[2]
-    out[gold, 3] = 255
-    out[ink, 0] = 255
-    out[ink, 1] = 255
-    out[ink, 2] = 255
-    out[ink, 3] = 255
-    logo = Image.fromarray(out.astype(np.uint8), "RGBA")
-    bbox = logo.getbbox()
-    if bbox:
-        logo = logo.crop(bbox)
+
+def load_logo_crest(max_h=130) -> Image.Image:
+    logo = remove_white(Image.open(ASSETS / "ctk-crest-logo.png"), 248)
+    ratio = max_h / logo.height
+    return logo.resize((int(logo.width * ratio), max_h), Image.Resampling.LANCZOS)
+
+
+def load_topspeed(max_w=160) -> Image.Image:
+    logo = remove_white(Image.open(ASSETS / "topspeed-logo.png"), 248)
     ratio = max_w / logo.width
     return logo.resize((max_w, max(1, int(logo.height * ratio))), Image.Resampling.LANCZOS)
 
 
-def circular_photo(size: int = 220) -> Image.Image:
-    src = Image.open(ASSETS / "corretora-portrait.png").convert("RGBA")
-    side = min(src.width, src.height)
-    left = (src.width - side) // 2
-    top = (src.height - side) // 2
-    src = src.crop((left, top, left + side, top + side)).resize(
-        (size, size), Image.Resampling.LANCZOS
-    )
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).ellipse((1, 1, size - 2, size - 2), fill=255)
-    face = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    face.paste(src, (0, 0), mask)
-
-    ring_pad = 12
-    canvas = Image.new("RGBA", (size + ring_pad * 2, size + ring_pad * 2), (0, 0, 0, 0))
-    rd = ImageDraw.Draw(canvas)
-    rd.ellipse((0, 0, size + ring_pad * 2 - 1, size + ring_pad * 2 - 1), outline=GOLD, width=7)
-    rd.ellipse((5, 5, size + ring_pad * 2 - 6, size + ring_pad * 2 - 6), outline=GOLD_LIGHT, width=2)
-    canvas.paste(face, (ring_pad, ring_pad), face)
-    return canvas
-
-
-def icon_tile(size: int, kind: str) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.ellipse((1, 1, size - 2, size - 2), fill=NAVY_MID, outline=GOLD, width=3)
-    cx = cy = size / 2
-    s = size * 0.26
-    c = GOLD_LIGHT
-    w = 3
-
-    if kind == "auto":
-        d.rounded_rectangle((cx - s * 1.15, cy - s * 0.1, cx + s * 1.15, cy + s * 0.65), 5, outline=c, width=w)
-        d.polygon(
-            [(cx - s * 0.8, cy - s * 0.1), (cx - s * 0.3, cy - s * 0.8), (cx + s * 0.4, cy - s * 0.8), (cx + s * 0.9, cy - s * 0.1)],
-            outline=c,
-            width=w,
-        )
-        d.ellipse((cx - s * 0.8, cy + s * 0.4, cx - s * 0.3, cy + s * 0.9), outline=c, width=w)
-        d.ellipse((cx + s * 0.3, cy + s * 0.4, cx + s * 0.8, cy + s * 0.9), outline=c, width=w)
-    elif kind == "casa":
-        d.polygon([(cx, cy - s), (cx - s, cy), (cx + s, cy)], outline=c, width=w)
-        d.rectangle((cx - s * 0.72, cy, cx + s * 0.72, cy + s * 0.9), outline=c, width=w)
-        d.rectangle((cx - s * 0.2, cy + s * 0.25, cx + s * 0.2, cy + s * 0.9), outline=c, width=w)
-    elif kind == "vida":
-        pts = [
-            (cx, cy - s),
-            (cx - s * 0.9, cy - s * 0.35),
-            (cx - s * 0.8, cy + s * 0.5),
-            (cx, cy + s),
-            (cx + s * 0.8, cy + s * 0.5),
-            (cx + s * 0.9, cy - s * 0.35),
-        ]
-        d.polygon(pts, outline=c, width=w)
-        d.ellipse((cx - s * 0.4, cy - s * 0.2, cx - 2, cy + s * 0.2), outline=c, width=2)
-        d.ellipse((cx + 2, cy - s * 0.2, cx + s * 0.4, cy + s * 0.2), outline=c, width=2)
-        d.polygon([(cx - s * 0.38, cy + 2), (cx, cy + s * 0.5), (cx + s * 0.38, cy + 2)], outline=c, width=2)
-    elif kind == "saude":
-        d.rounded_rectangle((cx - s * 0.26, cy - s, cx + s * 0.26, cy + s), 4, fill=c)
-        d.rounded_rectangle((cx - s, cy - s * 0.26, cx + s, cy + s * 0.26), 4, fill=c)
-    elif kind == "empresa":
-        d.rectangle((cx - s * 0.85, cy - s * 0.15, cx + s * 0.85, cy + s * 0.9), outline=c, width=w)
-        d.rectangle((cx - s * 0.5, cy - s * 0.9, cx + s * 0.5, cy - s * 0.15), outline=c, width=w)
-        for i in (-0.5, 0, 0.5):
-            for j in (0.15, 0.5):
-                d.rectangle((cx + s * i - 5, cy + s * j - 5, cx + s * i + 5, cy + s * j + 5), outline=c, width=2)
-    else:  # odonto
-        d.ellipse((cx - s * 0.65, cy - s * 0.8, cx + s * 0.65, cy + s * 0.3), outline=c, width=w)
-        d.line([(cx - s * 0.45, cy + s * 0.1), (cx - s * 0.3, cy + s * 0.85)], fill=c, width=w)
-        d.line([(cx, cy + s * 0.25), (cx, cy + s * 0.7)], fill=c, width=w)
-        d.line([(cx + s * 0.45, cy + s * 0.1), (cx + s * 0.3, cy + s * 0.85)], fill=c, width=w)
-    return img
+def load_hero(size=(420, 520)) -> Image.Image:
+    src = Image.open(ASSETS / "corretora-hero.png").convert("RGB")
+    # cover crop
+    tw, th = size
+    scale = max(tw / src.width, th / src.height)
+    nw, nh = int(src.width * scale), int(src.height * scale)
+    src = src.resize((nw, nh), Image.Resampling.LANCZOS)
+    left = (nw - tw) // 2
+    top = max(0, (nh - th) // 2 - 20)
+    src = src.crop((left, top, left + tw, top + th))
+    # rounded mask
+    mask = Image.new("L", size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, tw - 1, th - 1), radius=28, fill=255)
+    out = Image.new("RGBA", size, (0, 0, 0, 0))
+    out.paste(src, (0, 0))
+    out.putalpha(mask)
+    # gold border
+    border = Image.new("RGBA", size, (0, 0, 0, 0))
+    bd = ImageDraw.Draw(border)
+    bd.rounded_rectangle((1, 1, tw - 2, th - 2), radius=28, outline=GOLD, width=4)
+    return Image.alpha_composite(out, border)
 
 
-def make_qr(pixel: int = 236) -> Image.Image:
+def make_qr(px=150) -> Image.Image:
     qr = qrcode.QRCode(
-        version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=10,
-        border=2,
+        box_size=8,
+        border=1,
     )
     qr.add_data(QR_URL)
     qr.make(fit=True)
-    raw = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    return raw.resize((pixel, pixel), Image.Resampling.NEAREST)
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    return img.resize((px, px), Image.Resampling.NEAREST)
 
 
-def wa_glyph(size: int = 44) -> Image.Image:
-    """Ícone WhatsApp estilo vetorial (círculo + balão)."""
+def icon_circle(kind: str, size=72) -> Image.Image:
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.ellipse((0, 0, size - 1, size - 1), fill=WHITE)
-    # balão
-    m = int(size * 0.16)
-    d.ellipse((m, int(m * 0.7), size - m, size - int(m * 1.15)), fill=GREEN)
+    d.ellipse((1, 1, size - 2, size - 2), fill=WHITE, outline=GOLD, width=3)
+    m = 7
+    d.ellipse((m, m, size - m - 1, size - m - 1), fill=NAVY)
+    cx = cy = size / 2
+    s = size * 0.22
+    c = WHITE  # ícones brancos sobre navy (como na referência)
+    w = 2
+
+    if kind == "auto":
+        d.rounded_rectangle((cx - s * 1.1, cy - s * 0.1, cx + s * 1.1, cy + s * 0.55), 3, outline=c, width=w)
+        d.polygon(
+            [(cx - s * 0.75, cy - s * 0.1), (cx - s * 0.25, cy - s * 0.7), (cx + s * 0.35, cy - s * 0.7), (cx + s * 0.85, cy - s * 0.1)],
+            outline=c, width=w,
+        )
+        d.ellipse((cx - s * 0.75, cy + s * 0.35, cx - s * 0.3, cy + s * 0.8), outline=c, width=w)
+        d.ellipse((cx + s * 0.3, cy + s * 0.35, cx + s * 0.75, cy + s * 0.8), outline=c, width=w)
+    elif kind == "moto":
+        d.ellipse((cx - s * 0.95, cy + s * 0.15, cx - s * 0.25, cy + s * 0.85), outline=c, width=w)
+        d.ellipse((cx + s * 0.25, cy + s * 0.15, cx + s * 0.95, cy + s * 0.85), outline=c, width=w)
+        d.line([(cx - s * 0.4, cy + s * 0.35), (cx + s * 0.15, cy - s * 0.55)], fill=c, width=w + 1)
+        d.line([(cx + s * 0.15, cy - s * 0.55), (cx + s * 0.55, cy + s * 0.35)], fill=c, width=w + 1)
+        d.arc((cx - s * 0.1, cy - s * 0.9, cx + s * 0.7, cy - s * 0.1), 200, 340, fill=c, width=w)
+    elif kind == "truck":
+        d.rectangle((cx - s * 1.05, cy - s * 0.35, cx + s * 0.15, cy + s * 0.55), outline=c, width=w)
+        d.rectangle((cx + s * 0.15, cy - s * 0.05, cx + s * 0.95, cy + s * 0.55), outline=c, width=w)
+        d.ellipse((cx - s * 0.7, cy + s * 0.35, cx - s * 0.25, cy + s * 0.8), outline=c, width=w)
+        d.ellipse((cx + s * 0.35, cy + s * 0.35, cx + s * 0.8, cy + s * 0.8), outline=c, width=w)
+    elif kind == "casa":
+        d.polygon([(cx, cy - s * 0.85), (cx - s * 0.9, cy - s * 0.05), (cx + s * 0.9, cy - s * 0.05)], outline=c, width=w)
+        d.rectangle((cx - s * 0.65, cy - s * 0.05, cx + s * 0.65, cy + s * 0.8), outline=c, width=w)
+        d.rectangle((cx - s * 0.18, cy + s * 0.15, cx + s * 0.18, cy + s * 0.8), outline=c, width=w)
+    elif kind == "vida":
+        d.ellipse((cx - s * 0.85, cy - s * 0.55, cx - 1, cy + s * 0.25), outline=c, width=w)
+        d.ellipse((1 + cx, cy - s * 0.55, cx + s * 0.85, cy + s * 0.25), outline=c, width=w)
+        d.polygon([(cx - s * 0.82, cy + s * 0.05), (cx, cy + s * 0.9), (cx + s * 0.82, cy + s * 0.05)], outline=c, width=w)
+        d.ellipse((cx - s * 0.35, cy - s * 0.15, cx - s * 0.1, cy + s * 0.1), fill=c)
+        d.ellipse((cx + s * 0.1, cy - s * 0.15, cx + s * 0.35, cy + s * 0.1), fill=c)
+    elif kind == "empresa":
+        d.rectangle((cx - s * 0.75, cy - s * 0.15, cx + s * 0.75, cy + s * 0.8), outline=c, width=w)
+        d.rectangle((cx - s * 0.4, cy - s * 0.85, cx + s * 0.4, cy - s * 0.15), outline=c, width=w)
+        for i in (-0.4, 0, 0.4):
+            d.rectangle((cx + s * i - 4, cy + s * 0.15, cx + s * i + 4, cy + s * 0.4), outline=c, width=1)
+    else:  # consorcio $
+        d.ellipse((cx - s * 0.75, cy - s * 0.75, cx + s * 0.75, cy + s * 0.75), outline=c, width=w + 1)
+        f = F(int(size * 0.38), True)
+        d.text((cx - size * 0.12, cy - size * 0.22), "$", font=f, fill=c)
+    return img
+
+
+def gold_shield(size=28) -> Image.Image:
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    pts = [
+        (size * 0.5, 1),
+        (size - 2, size * 0.28),
+        (size - 3, size * 0.62),
+        (size * 0.5, size - 1),
+        (3, size * 0.62),
+        (2, size * 0.28),
+    ]
+    d.polygon(pts, fill=GOLD)
+    # check
+    d.line([(size * 0.28, size * 0.48), (size * 0.45, size * 0.65), (size * 0.72, size * 0.32)], fill=NAVY_DEEP, width=3)
+    return img
+
+
+def heart_icon(size=22) -> Image.Image:
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c = GOLD_LIGHT
+    d.ellipse((1, 2, size * 0.55, size * 0.6), outline=c, width=2)
+    d.ellipse((size * 0.45, 2, size - 2, size * 0.6), outline=c, width=2)
+    d.polygon([(2, size * 0.4), (size / 2, size - 2), (size - 2, size * 0.4)], outline=c, width=2)
+    return img
+
+
+def benefit_icon(kind: str, size=46) -> Image.Image:
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c = GOLD
+    w = 2
+    cx = cy = size / 2
+    s = size * 0.32
+    if kind == "handshake":
+        d.arc((cx - s, cy - s * 0.4, cx + s * 0.2, cy + s * 0.8), 20, 200, fill=c, width=w)
+        d.arc((cx - s * 0.2, cy - s * 0.4, cx + s, cy + s * 0.8), -20, 160, fill=c, width=w)
+        d.line([(cx - s * 0.6, cy), (cx + s * 0.6, cy)], fill=c, width=w)
+    elif kind == "search":
+        d.ellipse((cx - s, cy - s, cx + s * 0.4, cy + s * 0.4), outline=c, width=w)
+        d.line([(cx + s * 0.25, cy + s * 0.25), (cx + s * 0.9, cy + s * 0.9)], fill=c, width=w + 1)
+    elif kind == "people":
+        for dx in (-0.55, 0, 0.55):
+            d.ellipse((cx + s * dx - 4, cy - s * 0.7, cx + s * dx + 4, cy - s * 0.2), outline=c, width=w)
+            d.arc((cx + s * dx - 8, cy - s * 0.1, cx + s * dx + 8, cy + s * 0.9), 200, 340, fill=c, width=w)
+    elif kind == "headset":
+        d.arc((cx - s, cy - s * 0.7, cx + s, cy + s * 0.5), 200, 340, fill=c, width=w)
+        d.rounded_rectangle((cx - s * 1.1, cy - s * 0.1, cx - s * 0.55, cy + s * 0.55), 3, outline=c, width=w)
+        d.rounded_rectangle((cx + s * 0.55, cy - s * 0.1, cx + s * 1.1, cy + s * 0.55), 3, outline=c, width=w)
+    else:  # star
+        pts = []
+        import math
+        for i in range(10):
+            ang = -math.pi / 2 + i * math.pi / 5
+            r = s if i % 2 == 0 else s * 0.45
+            pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+        d.polygon(pts, outline=c, width=w)
+    return img
+
+
+def wa_bubble(size=56) -> Image.Image:
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse((0, 0, size - 1, size - 1), fill=GREEN)
+    m = int(size * 0.18)
+    d.ellipse((m, int(m * 0.7), size - m, size - int(m * 1.15)), fill=WHITE)
     d.polygon(
-        [
-            (int(size * 0.26), int(size * 0.72)),
-            (int(size * 0.14), int(size * 0.94)),
-            (int(size * 0.44), int(size * 0.78)),
-        ],
-        fill=GREEN,
-    )
-    # handset hint
-    d.arc(
-        (int(size * 0.32), int(size * 0.30), int(size * 0.68), int(size * 0.66)),
-        start=200,
-        end=340,
+        [(int(size * 0.28), int(size * 0.72)), (int(size * 0.16), int(size * 0.94)), (int(size * 0.46), int(size * 0.78))],
         fill=WHITE,
-        width=3,
     )
     return img
 
 
-def phone_emoji(size: int = 36) -> Image.Image:
-    """Ícone 📱 vetorial (branco) — legível no botão verde."""
+def phone_icon(size=28) -> Image.Image:
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    # corpo do celular
-    x0, y0 = size * 0.28, size * 0.06
-    x1, y1 = size * 0.72, size * 0.94
-    d.rounded_rectangle((x0, y0, x1, y1), radius=size * 0.12, outline=WHITE, width=max(2, size // 14))
-    # tela
-    d.rounded_rectangle(
-        (x0 + size * 0.08, y0 + size * 0.14, x1 - size * 0.08, y1 - size * 0.22),
-        radius=size * 0.04,
-        outline=WHITE,
-        width=max(1, size // 18),
-    )
-    # botão home
-    cx, cy = size / 2, y1 - size * 0.11
-    r = size * 0.06
-    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=WHITE)
+    d.rounded_rectangle((size * 0.3, 1, size * 0.7, size - 1), 4, outline=WHITE, width=2)
+    d.ellipse((size * 0.42, size * 0.78, size * 0.58, size * 0.9), fill=WHITE)
     return img
+
+
+def wrap_text(draw, text, font, max_w):
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        tw, _ = ts(draw, trial, font)
+        if tw <= max_w:
+            cur = trial
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines
 
 
 def compose() -> Image.Image:
-    base = make_bg().convert("RGBA")
+    base = Image.new("RGB", (W, H), NAVY_DEEP)
+    # subtle top gradient
+    px = base.load()
+    for y in range(520):
+        t = y / 520
+        r = int(NAVY_DEEP[0] + (NAVY[0] - NAVY_DEEP[0]) * t)
+        g = int(NAVY_DEEP[1] + (NAVY[1] - NAVY_DEEP[1]) * t)
+        b = int(NAVY_DEEP[2] + (NAVY[2] - NAVY_DEEP[2]) * t)
+        for x in range(W):
+            px[x, y] = (r, g, b)
+
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
-    draw_borders(draw)
 
-    # Escala vertical compacta para caber tudo com bordas
-    y = MARGIN + 22
+    # ========== TOP LEFT BRAND ==========
+    logo = load_logo_crest(118)
+    layer.alpha_composite(logo, (42, 28))
 
-    logo = load_logo(240)
-    layer.alpha_composite(logo, ((W - logo.width) // 2, y))
-    y += logo.height + 10
+    f_sub = F(13, True)
+    draw.text((52, 28 + logo.height + 4), "CORRETORA DE SEGUROS", font=f_sub, fill=WHITE)
 
-    photo = circular_photo(200)
-    layer.alpha_composite(photo, ((W - photo.width) // 2, y))
-    y += photo.height + 10
+    # Parceira oficial TopSpeed
+    y_p = 28 + logo.height + 28
+    sh = gold_shield(26)
+    layer.alpha_composite(sh, (52, y_p))
+    f_p = F(12, True)
+    draw.text((84, y_p + 4), "PARCEIRA OFICIAL", font=f_p, fill=GOLD_LIGHT)
+    ts_logo = load_topspeed(130)
+    layer.alpha_composite(ts_logo, (84, y_p + 22))
 
-    y += center_text(draw, "CTK CORRETORA DE SEGUROS", y, F(22, True), GOLD_LIGHT) + 6
-    y += center_text(draw, "Proteção completa para você e sua família", y, F(17), WHITE) + 12
+    # Tagline
+    y_t = y_p + 70
+    f_h1 = F(34, True)
+    f_h2 = F(36, True)
+    draw.text((48, y_t), "CUIDAMOS DO QUE", font=f_h1, fill=GOLD)
+    draw.text((48, y_t + 40), "MAIS IMPORTA!", font=f_h2, fill=WHITE)
 
-    draw.line([(W // 2 - 70, y), (W // 2 + 70, y)], fill=GOLD, width=2)
-    y += 16
+    # Experience capsule
+    y_c = y_t + 95
+    exp = "Há mais de 20 anos oferecendo soluções completas para proteger você, sua família e seu patrimônio."
+    f_exp = F(13)
+    lines = wrap_text(draw, exp, f_exp, 420)
+    cap_h = 18 + len(lines) * 18 + 12
+    round_rect(draw, (42, y_c, 520, y_c + cap_h), 22, fill=NAVY, outline=GOLD, width=2)
+    ht = heart_icon(20)
+    layer.alpha_composite(ht, (56, y_c + 14))
+    ty = y_c + 12
+    for line in lines:
+        draw.text((84, ty), line, font=f_exp, fill=WHITE)
+        ty += 18
 
-    # Ícones 2x3
+    # ========== TOP RIGHT HERO ==========
+    hero = load_hero((430, 500))
+    hx, hy = 600, 24
+    # soft shadow
+    shadow = Image.new("RGBA", (hero.width + 20, hero.height + 20), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    sd.rounded_rectangle((8, 10, hero.width + 8, hero.height + 10), 28, fill=(0, 0, 0, 90))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(6))
+    layer.alpha_composite(shadow, (hx - 8, hy - 2))
+    layer.alpha_composite(hero, (hx, hy))
+
+    # Badge overlapping photo
+    badge = "ATUANDO NO RAMO DE SEGUROS HÁ 20 ANOS"
+    f_badge = F(11, True)
+    bw, bh = ts(draw, badge, f_badge)
+    bx0 = hx + 18
+    by0 = hy + hero.height - 70
+    round_rect(draw, (bx0, by0, bx0 + bw + 50, by0 + 42), 10, fill=(12, 12, 18, 230), outline=GOLD, width=2)
+    bsh = gold_shield(22)
+    layer.alpha_composite(bsh, (bx0 + 10, by0 + 10))
+    draw.text((bx0 + 38, by0 + 12), badge, font=f_badge, fill=GOLD_LIGHT)
+
+    # ========== WHITE MIDDLE PANEL ==========
+    panel_top = 545
+    panel_bot = 1045
+    round_rect(draw, (28, panel_top, W - 28, panel_bot), 28, fill=WHITE)
+
+    # SOLUÇÕES capsule
+    title = "SOLUÇÕES QUE OFERECEMOS"
+    f_sol = F(16, True)
+    tw, th = ts(draw, title, f_sol)
+    sol_w = tw + 48
+    sol_x = (W - sol_w) // 2
+    sol_y = panel_top + 18
+    round_rect(draw, (sol_x, sol_y, sol_x + sol_w, sol_y + 36), 18, fill=GOLD)
+    draw.text(((W - tw) // 2, sol_y + 8), title, font=f_sol, fill=NAVY_DEEP)
+
+    # 7 product icons
     products = [
-        ("auto", "AUTO"),
-        ("casa", "RESIDENCIAL"),
-        ("vida", "VIDA"),
-        ("saude", "SAÚDE"),
-        ("empresa", "EMPRESARIAL"),
-        ("odonto", "ODONTOLÓGICO"),
+        ("auto", "SEGURO\nAUTO"),
+        ("moto", "SEGURO\nMOTO"),
+        ("truck", "SEGURO\nCAMINHÃO"),
+        ("casa", "SEGURO\nRESIDENCIAL"),
+        ("vida", "SEGURO\nDE VIDA"),
+        ("empresa", "SEGURO\nEMPRESARIAL"),
+        ("money", "CONSÓRCIOS\nE MUITO MAIS"),
     ]
-    icon_s = 70
-    gap_x = 36
-    cols = 3
-    row_w = cols * icon_s + (cols - 1) * gap_x
-    x0 = (W - row_w) // 2
-    f_icon = F(13, True)
-    label_h = 18
-
+    icon_s = 64
+    gap = 18
+    total_w = 7 * icon_s + 6 * gap
+    x0 = (W - total_w) // 2
+    iy = sol_y + 52
+    f_ilab = F(9, True)
     for i, (kind, label) in enumerate(products):
-        row, col = divmod(i, cols)
-        ix = x0 + col * (icon_s + gap_x)
-        iy = y + row * (icon_s + label_h + 16)
-        ic = icon_tile(icon_s, kind)
+        ix = x0 + i * (icon_s + gap)
+        ic = icon_circle(kind, icon_s)
         layer.alpha_composite(ic, (ix, iy))
-        tw, _ = text_size(draw, label, f_icon)
-        draw.text((ix + (icon_s - tw) // 2, iy + icon_s + 5), label, font=f_icon, fill=WHITE)
+        # multiline label centered
+        for li, line in enumerate(label.split("\n")):
+            lw, _ = ts(draw, line, f_ilab)
+            draw.text((ix + (icon_s - lw) // 2, iy + icon_s + 4 + li * 12), line, font=f_ilab, fill=NAVY)
 
-    y += 2 * (icon_s + label_h + 16) + 6
+    # Cotação row: left text + right QR
+    cy0 = iy + icon_s + 42
+    # Left CTA text — highlighted
+    f_cta1 = F(26, True)
+    f_cta2 = F(26, True)
+    draw.text((52, cy0), "FAÇA SUA", font=f_cta1, fill=NAVY)
+    draw.text((52, cy0 + 32), "COTAÇÃO", font=f_cta2, fill=GOLD_DARK)
+    draw.text((52, cy0 + 64), "GRATUITA!", font=f_cta2, fill=NAVY)
 
-    # CTA DESTACADO — faixa dourada sólida, sem artefatos
-    cta = "FAÇA SUA COTAÇÃO GRATUITA"
-    f_cta = F(28, True)
-    tw, th = text_size(draw, cta, f_cta)
-    cta_h = 74
-    cta_m = 72
-    # sombra suave abaixo
-    rounded(draw, (cta_m + 2, y + 6, W - cta_m + 2, y + cta_h + 6), 18, fill=(0, 0, 0, 100))
-    rounded(draw, (cta_m, y, W - cta_m, y + cta_h), 18, fill=GOLD)
-    rounded(draw, (cta_m, y, W - cta_m, y + cta_h), 18, outline=GOLD_LIGHT, width=3)
-    draw.text(((W - tw) // 2, y + (cta_h - th) // 2 - 1), cta, font=f_cta, fill=NAVY_DEEP)
-    y += cta_h + 18
+    f_desc = F(13)
+    desc = "Seguro Auto, Moto e Caminhão: É só preencher o formulário e buscaremos a melhor opção para você!"
+    for i, line in enumerate(wrap_text(draw, desc, f_desc, 480)):
+        draw.text((52, cy0 + 105 + i * 17), line, font=f_desc, fill=GRAY)
 
-    # QR maior e enquadrado (uma moldura limpa)
-    qr = make_qr(252)
-    qx = (W - qr.width) // 2
-    box_pad = 10
-    rounded(
-        draw,
-        (qx - box_pad, y - box_pad, qx + qr.width + box_pad, y + qr.height + box_pad),
-        12,
-        fill=WHITE,
-        outline=GOLD,
-        width=4,
-    )
-    layer.paste(qr, (qx, y))
-    y += qr.height + box_pad + 14
+    # Cotação 20 seguradoras
+    y_seg = cy0 + 160
+    layer.alpha_composite(gold_shield(24), (52, y_seg))
+    f_seg = F(12, True)
+    draw.text((82, y_seg + 4), "COTAÇÃO EM MAIS DE 20 SEGURADORAS", font=f_seg, fill=NAVY)
 
-    # Botão dourado (duas linhas, branco, centralizado)
-    t1, t2 = "ESCANEIE O QR CODE", "E FAÇA SUA COTAÇÃO"
-    f_btn = F(18, True)
-    w1, h1 = text_size(draw, t1, f_btn)
-    w2, h2 = text_size(draw, t2, f_btn)
-    btn_w = max(w1, w2) + 56
-    btn_h = h1 + h2 + 28
-    bx = (W - btn_w) // 2
-    rounded(draw, (bx, y, bx + btn_w, y + btn_h), 12, fill=GOLD, outline=GOLD_LIGHT, width=2)
-    draw.text(((W - w1) // 2, y + 10), t1, font=f_btn, fill=WHITE)
-    draw.text(((W - w2) // 2, y + 10 + h1 + 4), t2, font=f_btn, fill=WHITE)
-    y += btn_h + 16
+    # Right QR — enlarged & framed
+    qr = make_qr(168)
+    qx = W - 48 - qr.width - 14
+    qy = cy0 + 2
+    # gold frame pad
+    pad = 12
+    round_rect(draw, (qx - pad, qy - pad, qx + qr.width + pad, qy + qr.height + pad), 12, fill=WHITE, outline=GOLD, width=4)
+    layer.paste(qr.convert("RGBA"), (qx, qy))
 
-    # BOTÃO WHATSAPP GRANDE
-    wa_h = 82
-    wa_m = 86
-    rounded(draw, (wa_m + 3, y + 4, W - wa_m + 3, y + wa_h + 4), 41, fill=(0, 0, 0, 120))
-    rounded(draw, (wa_m, y, W - wa_m, y + wa_h), 41, fill=GREEN, outline=(180, 255, 210), width=3)
+    # Gold button under QR — required copy, white text, centered
+    btn1, btn2 = "ESCANEIE O QR CODE", "E FAÇA SUA COTAÇÃO"
+    f_btn = F(12, True)
+    w1, h1 = ts(draw, btn1, f_btn)
+    w2, h2 = ts(draw, btn2, f_btn)
+    btn_w = max(qr.width + pad * 2, max(w1, w2) + 24)
+    btn_h = h1 + h2 + 18
+    bx = qx + qr.width // 2 - btn_w // 2
+    by = qy + qr.height + pad + 10
+    round_rect(draw, (bx, by, bx + btn_w, by + btn_h), 10, fill=GOLD, outline=GOLD_DARK, width=1)
+    draw.text((bx + (btn_w - w1) // 2, by + 7), btn1, font=f_btn, fill=WHITE)
+    draw.text((bx + (btn_w - w2) // 2, by + 7 + h1 + 2), btn2, font=f_btn, fill=WHITE)
 
-    icon = wa_glyph(48)
-    phone = phone_emoji(36)
-    f_wa = F(28, True)
-    label = WA_LABEL
-    tw, th = text_size(draw, label, f_wa)
-    gap = 10
-    total = icon.width + gap + phone.width + 10 + tw
-    start = (W - total) // 2
-    iy = y + (wa_h - icon.height) // 2
-    layer.alpha_composite(icon, (start, iy))
-    layer.alpha_composite(phone, (start + icon.width + gap, y + (wa_h - phone.height) // 2))
-    draw.text(
-        (start + icon.width + gap + phone.width + 10, y + (wa_h - th) // 2 - 1),
-        label,
-        font=f_wa,
-        fill=WHITE,
-    )
+    # WhatsApp row inside white panel
+    wa_y = panel_bot - 110
+    # divider
+    draw.line([(52, wa_y - 14), (W - 52, wa_y - 14)], fill=(230, 230, 235), width=2)
 
-    # Garantir que cabemos na borda inferior
-    assert y + wa_h < H - MARGIN - 16, f"overflow: bottom={y + wa_h} limit={H - MARGIN - 16}"
+    bubble = wa_bubble(54)
+    layer.alpha_composite(bubble, (48, wa_y))
+    f_wa_t = F(13, True)
+    wa_msg = "CONSÓRCIOS, PLANOS DE SAÚDE E DEMAIS SEGUROS? Fale conosco no WhatsApp e nossa equipe terá o maior prazer em te atender!"
+    tx = 114
+    for i, line in enumerate(wrap_text(draw, wa_msg, f_wa_t, 420)):
+        draw.text((tx, wa_y + 2 + i * 16), line, font=f_wa_t, fill=GREEN_TEXT)
 
-    out = Image.alpha_composite(base, layer)
+    # BIG green WhatsApp button (right) — larger, with phone
+    gbw = 320
+    gbh = 72
+    gbx = W - 52 - gbw
+    gby = wa_y - 4
+    round_rect(draw, (gbx + 2, gby + 3, gbx + gbw + 2, gby + gbh + 3), 36, fill=(0, 0, 0, 60))
+    round_rect(draw, (gbx, gby, gbx + gbw, gby + gbh), 36, fill=GREEN)
+    # content: WA icon + phone + CTA
+    mini = wa_bubble(32)
+    layer.alpha_composite(mini, (gbx + 14, gby + 20))
+    ph = phone_icon(22)
+    layer.alpha_composite(ph, (gbx + 52, gby + 12))
+    f_ph = F(13, True)
+    draw.text((gbx + 78, gby + 12), WA_PHONE, font=f_ph, fill=WHITE)
+    f_cta_wa = F(13, True)
+    cta_wa = "SOLICITE SUA COTAÇÃO AGORA"
+    cw, _ = ts(draw, cta_wa, f_cta_wa)
+    draw.text((gbx + (gbw - cw) // 2 + 10, gby + 40), cta_wa, font=f_cta_wa, fill=WHITE)
+
+    # ========== FOOTER NAVY ==========
+    # already navy from base; ensure bottom solid
+    draw.rectangle((0, panel_bot + 8, W, H), fill=NAVY_DEEP)
+
+    benefits = [
+        ("handshake", "ATENDIMENTO\nPERSONALIZADO"),
+        ("search", "ANÁLISE DAS\nMELHORES SEGURADORAS"),
+        ("people", "ACOMPANHAMENTO\nDO INÍCIO AO FIM"),
+        ("headset", "SUPORTE TAMBÉM\nAPÓS A CONTRATAÇÃO"),
+        ("star", "CLIENTES\nSATISFEITOS"),
+    ]
+    f_ben = F(9, True)
+    b_s = 42
+    b_gap = 28
+    b_total = 5 * b_s + 4 * b_gap
+    # Actually space by equal columns across width
+    col_w = (W - 80) // 5
+    by_icons = panel_bot + 28
+    for i, (kind, label) in enumerate(benefits):
+        cx = 40 + i * col_w + col_w // 2
+        ic = benefit_icon(kind, b_s)
+        layer.alpha_composite(ic, (cx - b_s // 2, by_icons))
+        for li, line in enumerate(label.split("\n")):
+            lw, _ = ts(draw, line, f_ben)
+            draw.text((cx - lw // 2, by_icons + b_s + 6 + li * 12), line, font=f_ben, fill=WHITE)
+
+    # Bottom strip
+    strip_y = H - 78
+    draw.line([(40, strip_y - 10), (W - 40, strip_y - 10)], fill=GOLD, width=1)
+    layer.alpha_composite(gold_shield(28), (40, strip_y))
+    f_foot = F(11, True)
+    slogan = "PROTEGER HOJE É GARANTIR UM AMANHÃ TRANQUILO PARA VOCÊ, SUA FAMÍLIA E SEU PATRIMÔNIO."
+    for i, line in enumerate(wrap_text(draw, slogan, f_foot, 620)):
+        draw.text((76, strip_y + 2 + i * 14), line, font=f_foot, fill=WHITE)
+
+    # TopSpeed again on right
+    ts2 = load_topspeed(140)
+    # recolor for dark: make black -> white
+    arr = np.array(ts2)
+    ink = arr[:, :, 3] > 20
+    # keep red accents, whiten dark
+    dark = ink & (arr[:, :, 0] < 80) & (arr[:, :, 1] < 80) & (arr[:, :, 2] < 80)
+    arr[dark, 0] = 255
+    arr[dark, 1] = 255
+    arr[dark, 2] = 255
+    ts2 = Image.fromarray(arr, "RGBA")
+    layer.alpha_composite(ts2, (W - 40 - ts2.width, strip_y - 4))
+    f_po = F(10, True)
+    po = "PARCEIRA OFICIAL"
+    pw, _ = ts(draw, po, f_po)
+    draw.text((W - 40 - ts2.width + (ts2.width - pw) // 2, strip_y - 18), po, font=f_po, fill=GOLD_LIGHT)
+
+    out = Image.alpha_composite(base.convert("RGBA"), layer)
     return out.convert("RGB")
 
 
@@ -392,12 +523,12 @@ def export(img: Image.Image) -> Path:
     meta = PngImagePlugin.PngInfo()
     meta.add_text("Title", "CTK Corretora de Seguros — Cotação Gratuita")
     meta.add_text("Description", f"QR={QR_URL}; WhatsApp={WA_URL}")
-    meta.add_text("Software", "qrcode+Pillow CTK generator")
+    meta.add_text("Software", "qrcode+Pillow CTK generator v2")
     kwargs = dict(dpi=(DPI, DPI), optimize=False, compress_level=1, pnginfo=meta)
     img.save(out, "PNG", **kwargs)
     img.save("/opt/cursor/artifacts/CTK_Arte_WhatsApp_1080x1350.png", "PNG", **kwargs)
 
-    # QR isolado + preview crop
+    # QR isolado
     make_qr(400).save(OUTPUT / "qrcode_segfy_real.png", "PNG", dpi=(DPI, DPI))
 
     (OUTPUT / "CTK_Arte_WhatsApp_clicavel.html").write_text(
@@ -406,16 +537,16 @@ def export(img: Image.Image) -> Path:
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>CTK — Cotação</title>
 <style>
-body{{margin:0;background:#041226;display:flex;justify-content:center;padding:12px}}
+body{{margin:0;background:#061230;display:flex;justify-content:center;padding:12px}}
 .wrap{{position:relative;width:min(1080px,100%)}}
 img{{width:100%;display:block;border-radius:6px}}
-a.qr{{position:absolute;left:28%;right:28%;top:58%;height:20%}}
-a.wa{{position:absolute;left:8%;right:8%;bottom:4.2%;height:6.2%;border-radius:999px}}
+a.qr{{position:absolute;left:68%;right:5%;top:52%;height:14%}}
+a.wa{{position:absolute;left:62%;right:5%;top:68%;height:6%;border-radius:999px}}
 </style></head><body>
 <div class="wrap">
 <img src="CTK_Arte_WhatsApp_1080x1350.png" alt="CTK"/>
 <a class="qr" href="{QR_URL}" title="Cotação Segfy"></a>
-<a class="wa" href="{WA_URL}" title="WhatsApp {WA_LABEL}"></a>
+<a class="wa" href="{WA_URL}" title="WhatsApp {WA_PHONE}"></a>
 </div></body></html>
 """,
         encoding="utf-8",
@@ -424,14 +555,10 @@ a.wa{{position:absolute;left:8%;right:8%;bottom:4.2%;height:6.2%;border-radius:9
 
 
 def main():
+    # fix load_hero typo guard
     img = compose()
     path = export(img)
-    print(f"OK {path} {img.size} dpi={DPI} bytes={path.stat().st_size}")
-    # Validar payload do QR gerado pela lib
-    qr = qrcode.QRCode()
-    qr.add_data(QR_URL)
-    qr.make(fit=True)
-    print("QR modules:", qr.modules_count, "data OK")
+    print(f"OK {path} {img.size} bytes={path.stat().st_size}")
 
 
 if __name__ == "__main__":
