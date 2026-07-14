@@ -1,23 +1,25 @@
 # Arte Final CTK — WhatsApp / Instagram / Facebook / Impressão
 
+Layout baseado na arte oficial da CTK (hero à direita, painel branco, footer navy).
+
 ## Arquivo principal
 
 `output/CTK_Arte_WhatsApp_1080x1350.png`
 
-- Formato: PNG
-- Dimensões: **1080 × 1350 px**
-- DPI: **300**
-- QR Code **real** (biblioteca `qrcode`) → Segfy
-- Botão WhatsApp com **📱 +55 11 94194-7162**
+| Spec | Valor |
+|------|-------|
+| Formato | PNG |
+| Dimensões | **1080 × 1350 px** |
+| DPI | **300** |
+| QR | Real (`qrcode`) → Segfy |
+| WhatsApp | `📱 +55 11 94194-7162` → `wa.me/5511941947162` |
 
-## Links embutidos
+## Links
 
 | Elemento | Destino |
 |----------|---------|
 | QR Code | https://gestao.segfy.com/Publico/Segurados/Orcamentos/SolicitarCotacao?e=bq3pqK5O9i3fuSp4u7Wy9w%3D%3D |
-| Botão WhatsApp (HTML auxiliar) | https://wa.me/5511941947162 |
-
-> Em disparo de imagem no WhatsApp Business, o QR abre a cotação ao escanear. O HTML `CTK_Arte_WhatsApp_clicavel.html` adiciona áreas clicáveis para web / link na bio.
+| Botão WhatsApp (HTML) | https://wa.me/5511941947162 |
 
 ## Regenerar
 
@@ -26,7 +28,8 @@ pip install -r requirements.txt
 python3 gerar_arte.py
 ```
 
-## Assets
+## Assets (substituíveis pelos originais)
 
-- `assets/ctk-logo.png` — logo CTK
-- `assets/corretora-portrait.png` — foto da corretora (substitua pelo arquivo original para fidelidade total)
+- `assets/ctk-crest-logo.png` — brasão CTK
+- `assets/corretora-hero.png` — foto da corretora
+- `assets/topspeed-logo.png` — TopSpeed
