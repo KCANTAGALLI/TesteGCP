@@ -211,13 +211,7 @@ def make_qr(pixel: int = 236) -> Image.Image:
     qr.add_data(QR_URL)
     qr.make(fit=True)
     raw = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    raw = raw.resize((pixel, pixel), Image.Resampling.NEAREST)
-    pad = 14
-    frame = Image.new("RGB", (pixel + pad * 2, pixel + pad * 2), WHITE)
-    fd = ImageDraw.Draw(frame)
-    fd.rectangle([0, 0, pixel + pad * 2 - 1, pixel + pad * 2 - 1], outline=GOLD, width=4)
-    frame.paste(raw, (pad, pad))
-    return frame
+    return raw.resize((pixel, pixel), Image.Resampling.NEAREST)
 
 
 def wa_glyph(size: int = 44) -> Image.Image:
@@ -320,31 +314,30 @@ def compose() -> Image.Image:
 
     y += 2 * (icon_s + label_h + 16) + 6
 
-    # CTA DESTACADO
+    # CTA DESTACADO — faixa dourada sólida, sem artefatos
     cta = "FAÇA SUA COTAÇÃO GRATUITA"
-    f_cta = F(26, True)
+    f_cta = F(28, True)
     tw, th = text_size(draw, cta, f_cta)
-    cta_h = 70
-    cta_m = 78
-    # sombra
-    rounded(draw, (cta_m + 3, y + 5, W - cta_m + 3, y + cta_h + 5), 16, fill=(0, 0, 0, 110))
-    rounded(draw, (cta_m, y, W - cta_m, y + cta_h), 16, fill=GOLD, outline=GOLD_LIGHT, width=3)
-    # destaque interno
-    rounded(draw, (cta_m + 6, y + 5, W - cta_m - 6, y + 18), 8, fill=(255, 240, 180, 70))
+    cta_h = 74
+    cta_m = 72
+    # sombra suave abaixo
+    rounded(draw, (cta_m + 2, y + 6, W - cta_m + 2, y + cta_h + 6), 18, fill=(0, 0, 0, 100))
+    rounded(draw, (cta_m, y, W - cta_m, y + cta_h), 18, fill=GOLD)
+    rounded(draw, (cta_m, y, W - cta_m, y + cta_h), 18, outline=GOLD_LIGHT, width=3)
     draw.text(((W - tw) // 2, y + (cta_h - th) // 2 - 1), cta, font=f_cta, fill=NAVY_DEEP)
     y += cta_h + 18
 
-    # QR maior e enquadrado
-    qr = make_qr(248)
+    # QR maior e enquadrado (uma moldura limpa)
+    qr = make_qr(252)
     qx = (W - qr.width) // 2
-    box_pad = 12
+    box_pad = 10
     rounded(
         draw,
         (qx - box_pad, y - box_pad, qx + qr.width + box_pad, y + qr.height + box_pad),
-        14,
-        fill=NAVY,
+        12,
+        fill=WHITE,
         outline=GOLD,
-        width=3,
+        width=4,
     )
     layer.paste(qr, (qx, y))
     y += qr.height + box_pad + 14
